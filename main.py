@@ -433,7 +433,11 @@ def startup() -> None:
 @app.get("/", response_class=HTMLResponse)
 def login_page(request: Request) -> HTMLResponse:
     """Display the username login page."""
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse(
+        name="login.html",
+        context={"request": request},
+        request=request,
+    )
 
 
 @app.post("/login")
@@ -444,11 +448,12 @@ async def login(request: Request) -> Response:
 
     if not username:
         return templates.TemplateResponse(
-            "login.html",
-            {
+            name="login.html",
+            context={
                 "request": request,
                 "error": "Please enter a username.",
             },
+            request=request,
             status_code=400,
         )
 
@@ -509,8 +514,8 @@ def ranking_page(request: Request, position: int, confirmed: int = 0) -> HTMLRes
     remaining_count = len(pair_order) - completed_count
 
     return templates.TemplateResponse(
-        "rank.html",
-        {
+        name="rank.html",
+        context={
             "request": request,
             "username": username,
             "position": position,
@@ -524,6 +529,7 @@ def ranking_page(request: Request, position: int, confirmed: int = 0) -> HTMLRes
             "is_first": position == 1,
             "is_last": position == len(pair_order),
         },
+        request=request,
     )
 
 
@@ -566,11 +572,12 @@ def thanks_page(request: Request) -> HTMLResponse:
     completed_count = len(get_completed_pair_ids(username, pair_order))
 
     return templates.TemplateResponse(
-        "thanks.html",
-        {
+        name="thanks.html",
+        context={
             "request": request,
             "username": username,
             "completed_count": completed_count,
             "total_count": len(pair_order),
         },
+        request=request,
     )

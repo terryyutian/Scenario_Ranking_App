@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rank Scenarios</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}">
+  <script src="{{ url_for('static', path='rank.js') }}" defer></script>
+</head>
+<body>
+  <main class="page">
+    <header class="task-header">
+      <div>
+        <p class="eyebrow">Scenario pair {{ position }} of {{ total_count }}</p>
+        <h1>Rank the Three Scenarios</h1>
+      </div>
+      <a class="text-link" href="/logout">Switch user</a>
+    </header>
+
+    <section class="summary-grid">
+      <div>
+        <span class="summary-label">Username</span>
+        <strong>{{ username }}</strong>
+      </div>
+      <div>
+        <span class="summary-label">Completed</span>
+        <strong>{{ completed_count }}</strong>
+      </div>
+      <div>
+        <span class="summary-label">Remaining</span>
+        <strong>{{ remaining_count }}</strong>
+      </div>
+    </section>
+
+    <section class="context-panel">
+      <p class="section-label">Topic</p>
+      <h2>{{ topic }}</h2>
+
+      <p class="section-label">Target Attribute</p>
+      <p>{{ target_attribute }}</p>
+    </section>
+
+    <form method="post" id="ranking-form">
+      <input type="hidden" name="order" id="ranking-order" value="{{ scenarios | map(attribute='type') | join(',') }}">
+
+      <div class="ranking-instructions">
+        Drag the scenario boxes to rank them. The top scenario receives score 2, the middle scenario receives score 1, and the bottom scenario receives score 0.
+      </div>
+
+      <div class="rank-list" id="rank-list">
+        {% for scenario in scenarios %}
+          <article class="scenario-card" draggable="true" data-scenario-type="{{ scenario.type }}">
+            <div class="card-toolbar">
+              <span class="rank-badge">Rank {{ loop.index }}</span>
+              <div class="move-buttons">
+                <button type="button" class="secondary-button move-up">Move up</button>
+                <button type="button" class="secondary-button move-down">Move down</button>
+              </div>
+            </div>
+
+            <p class="section-label">Scenario Text</p>
+            <p>{{ scenario.scenario_text }}</p>
+
+            {% if scenario.data_table %}
+              <p class="section-label">Data Table</p>
+              <div class="table-wrap">
+                <table>
+                  {% if scenario.data_table.title %}
+                    <caption>{{ scenario.data_table.title }}</caption>
+                  {% endif %}
+                  {% if scenario.data_table.headers %}
+                    <thead>
+                      <tr>
+                        {% if scenario.data_table.has_row_labels %}
+                          <th>Row</th>
+                        {% endif %}
+                        {% for header in scenario.data_table.headers %}
+                          <th>{{ header }}</th>
+                        {% endfor %}
+                      </tr>
+                    </thead>
+                  {% endif %}
+                  <tbody>
+                    {% for row in scenario.data_table.rows %}
+                      <tr>
+                        {% if scenario.data_table.has_row_labels %}
+                          <td>{{ row["row_label"] }}</td>
+                        {% endif %}
+                        {% for value in row["values"] %}
+                          <td>{{ value }}</td>
+                        {% endfor %}
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+
+              {% if scenario.data_table.notes %}
+                <p class="note"><strong>Note:</strong> {{ scenario.data_table.notes }}</p>
+              {% endif %}
+            {% endif %}
+
+            {% if scenario.formula %}
+              <p class="formula"><strong>Formula:</strong> {{ scenario.formula }}</p>
+            {% endif %}
+
+            {% if scenario.example_question %}
+              <p class="section-label">Example Question</p>
+              <div class="example-question">{{ scenario.example_question }}</div>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+
+      <div class="actions">
+        {% if not is_first %}
+          <a class="secondary-link" href="/rank/{{ position - 1 }}">Back</a>
+        {% endif %}
+
+        <button type="submit">Confirm</button>
+
+        {% if confirmed and not is_last %}
+          <a class="primary-link" href="/rank/{{ position + 1 }}">Next</a>
+        {% endif %}
+      </div>
+    </form>
+  </main>
+</body>
+</html>

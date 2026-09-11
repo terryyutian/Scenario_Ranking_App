@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scenario Ranking Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}">
+</head>
+<body>
+  <main class="page narrow-page">
+    <section class="panel">
+      <h1>Scenario Ranking</h1>
+      <p class="lede">Enter your username to begin or continue ranking scenarios.</p>
+
+      {% if error %}
+        <p class="error-message">{{ error }}</p>
+      {% endif %}
+
+      <form method="post" action="/login" class="login-form">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" autocomplete="name" required autofocus>
+        <button type="submit">Continue</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>
