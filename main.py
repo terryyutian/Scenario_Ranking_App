@@ -7,6 +7,7 @@ randomized order, and stores each user's ranking decisions in SQLite.
 from __future__ import annotations
 
 import ast
+import io
 import json
 import random
 import sqlite3
@@ -16,7 +17,7 @@ from typing import Any
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -36,6 +37,7 @@ REQUIRED_COLUMNS = [
     "baseline_example_question",
 ]
 
+COGNITIVE_LEVEL_COLUMNS = ["cognitive_level", "congitive_level"]
 SCENARIO_TYPES = ["gold", "web_search", "baseline"]
 
 app = FastAPI(title="Scenario Ranking App")
@@ -65,9 +67,13 @@ def init_db() -> None:
                 baseline_scenario TEXT NOT NULL,
                 web_search_example_question TEXT NOT NULL,
                 baseline_example_question TEXT NOT NULL,
+                cognitive_level TEXT NOT NULL DEFAULT '',
                 gold_score INTEGER NOT NULL,
                 web_search_score INTEGER NOT NULL,
                 baseline_score INTEGER NOT NULL,
+                gold_comment TEXT NOT NULL DEFAULT '',
+                web_search_comment TEXT NOT NULL DEFAULT '',
+                baseline_comment TEXT NOT NULL DEFAULT '',
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (username, pair_id)
             )
@@ -94,6 +100,35 @@ def init_db() -> None:
             )
             """
         )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """
+        )
+        ensure_column(connection, "rankings", "cognitive_level", "TEXT NOT NULL DEFAULT ''")
+        ensure_column(connection, "rankings", "gold_comment", "TEXT NOT NULL DEFAULT ''")
+        ensure_column(connection, "rankings", "web_search_comment", "TEXT NOT NULL DEFAULT ''")
+        ensure_column(connection, "rankings", "baseline_comment", "TEXT NOT NULL DEFAULT ''")
+
+
+def ensure_column(
+    connection: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+    column_definition: str,
+) -> None:
+    """Add a column to an existing SQLite table if it is missing."""
+    existing_columns = {
+        row["name"]
+        for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    if column_name not in existing_columns:
+        connection.execute(
+            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"
+        )
 
 
 def cell_to_text(value: Any) -> str:
@@ -117,9 +152,19 @@ def load_source_records() -> list[dict[str, str]]:
     if missing_columns:
         raise ValueError(f"Missing required columns: {missing_columns}")
 
+    cognitive_level_column = next(
+        (column for column in COGNITIVE_LEVEL_COLUMNS if column in data.columns),
+        None,
+    )
+
     records: list[dict[str, str]] = []
-    for _, row in data[REQUIRED_COLUMNS].iterrows():
+    for _, row in data.iterrows():
         record = {col: cell_to_text(row[col]) for col in REQUIRED_COLUMNS}
+        record["cognitive_level"] = (
+            cell_to_text(row[cognitive_level_column])
+            if cognitive_level_column
+            else ""
+        )
         records.append(record)
 
     return records
@@ -193,7 +238,11 @@ def normalize_data_table(data_table: Any) -> dict[str, Any] | None:
     }
 
 
-def build_scenario_card(record: dict[str, str], scenario_type: str) -> dict[str, Any]:
+def build_scenario_card(
+    record: dict[str, str],
+    scenario_type: str,
+    saved_ranking: sqlite3.Row | None = None,
+) -> dict[str, Any]:
     """Build one scenario card for display."""
     if scenario_type == "gold":
         raw_scenario = record["gold_scenario"]
@@ -219,6 +268,7 @@ def build_scenario_card(record: dict[str, str], scenario_type: str) -> dict[str,
         "data_table": normalize_data_table(parsed.get("data_table")),
         "formula": cell_to_text(parsed.get("formula", "")),
         "example_question": example_question,
+        "comment": saved_ranking[f"{scenario_type}_comment"] if saved_ranking else "",
     }
 
 
@@ -236,6 +286,50 @@ def require_username(request: Request) -> str:
     if not username:
         raise HTTPException(status_code=303, headers={"Location": "/"})
     return username
+
+
+def get_last_username() -> str | None:
+    """Return the most recent username stored by the app."""
+    with get_db_connection() as connection:
+        row = connection.execute(
+            "SELECT value FROM app_state WHERE key = 'last_username'"
+        ).fetchone()
+        if row:
+            return row["value"]
+
+        row = connection.execute(
+            """
+            SELECT username
+            FROM rankings
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        if row:
+            return row["username"]
+
+        row = connection.execute(
+            """
+            SELECT username
+            FROM user_pair_order
+            ORDER BY rowid DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        return row["username"] if row else None
+
+
+def set_last_username(username: str) -> None:
+    """Store the most recent username in SQLite."""
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO app_state (key, value)
+            VALUES ('last_username', ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (username,),
+        )
 
 
 def get_or_create_pair_order(username: str, pair_ids: list[str]) -> list[str]:
@@ -364,6 +458,7 @@ def save_ranking(
     username: str,
     record: dict[str, str],
     ranking_order: list[str],
+    comments: dict[str, str],
 ) -> None:
     """Save or update one ranking decision in SQLite."""
     if sorted(ranking_order) != sorted(SCENARIO_TYPES):
@@ -387,12 +482,16 @@ def save_ranking(
                 baseline_scenario,
                 web_search_example_question,
                 baseline_example_question,
+                cognitive_level,
                 gold_score,
                 web_search_score,
                 baseline_score,
+                gold_comment,
+                web_search_comment,
+                baseline_comment,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(username, pair_id) DO UPDATE SET
                 gold_scenario = excluded.gold_scenario,
                 topic = excluded.topic,
@@ -401,9 +500,13 @@ def save_ranking(
                 baseline_scenario = excluded.baseline_scenario,
                 web_search_example_question = excluded.web_search_example_question,
                 baseline_example_question = excluded.baseline_example_question,
+                cognitive_level = excluded.cognitive_level,
                 gold_score = excluded.gold_score,
                 web_search_score = excluded.web_search_score,
                 baseline_score = excluded.baseline_score,
+                gold_comment = excluded.gold_comment,
+                web_search_comment = excluded.web_search_comment,
+                baseline_comment = excluded.baseline_comment,
                 updated_at = excluded.updated_at
             """,
             (
@@ -416,12 +519,51 @@ def save_ranking(
                 record["baseline_scenario"],
                 record["web_search_example_question"],
                 record["baseline_example_question"],
+                record["cognitive_level"],
                 scores["gold"],
                 scores["web_search"],
                 scores["baseline"],
+                comments["gold"],
+                comments["web_search"],
+                comments["baseline"],
                 datetime.now(timezone.utc).isoformat(),
             ),
         )
+
+
+def build_export_rows(username: str) -> list[dict[str, Any]]:
+    """Return saved rankings for export, ordered by the user's pair order."""
+    with get_db_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                r.pair_id,
+                r.gold_scenario,
+                r.topic,
+                r.target_attribute,
+                r.web_search_scenario,
+                r.baseline_scenario,
+                r.web_search_example_question,
+                r.baseline_example_question,
+                r.cognitive_level,
+                r.gold_score,
+                r.web_search_score,
+                r.baseline_score,
+                r.gold_comment,
+                r.web_search_comment,
+                r.baseline_comment,
+                r.username,
+                r.updated_at
+            FROM rankings r
+            LEFT JOIN user_pair_order o
+                ON r.username = o.username AND r.pair_id = o.pair_id
+            WHERE r.username = ?
+            ORDER BY o.position
+            """,
+            (username,),
+        ).fetchall()
+
+    return [dict(row) for row in rows]
 
 
 @app.on_event("startup")
@@ -435,7 +577,10 @@ def login_page(request: Request) -> HTMLResponse:
     """Display the username login page."""
     return templates.TemplateResponse(
         name="login.html",
-        context={"request": request},
+        context={
+            "request": request,
+            "previous_username": get_last_username(),
+        },
         request=request,
     )
 
@@ -445,6 +590,11 @@ async def login(request: Request) -> Response:
     """Store the username in a cookie and continue to the ranking task."""
     form_data = await request.form()
     username = str(form_data.get("username", "")).strip()
+    action = str(form_data.get("action", "continue")).strip()
+    confirmed_different_username = (
+        str(form_data.get("confirmed_different_username", "")).strip() == "yes"
+    )
+    previous_username = get_last_username()
 
     if not username:
         return templates.TemplateResponse(
@@ -452,11 +602,31 @@ async def login(request: Request) -> Response:
             context={
                 "request": request,
                 "error": "Please enter a username.",
+                "previous_username": previous_username,
             },
             request=request,
             status_code=400,
         )
 
+    if action == "use_previous" and previous_username:
+        username = previous_username
+    elif (
+        previous_username
+        and username != previous_username
+        and not confirmed_different_username
+    ):
+        return templates.TemplateResponse(
+            name="login.html",
+            context={
+                "request": request,
+                "previous_username": previous_username,
+                "requested_username": username,
+                "username_warning": True,
+            },
+            request=request,
+        )
+
+    set_last_username(username)
     response = RedirectResponse(url="/rank", status_code=303)
     response.set_cookie("username", username, httponly=True, samesite="lax")
     return response
@@ -505,8 +675,9 @@ def ranking_page(request: Request, position: int, confirmed: int = 0) -> HTMLRes
     pair_id = pair_order[position - 1]
     record = records_by_pair_id[pair_id]
     display_order = get_display_order(username, pair_id)
+    saved_ranking = get_ranking(username, pair_id)
     scenarios = [
-        build_scenario_card(record, scenario_type)
+        build_scenario_card(record, scenario_type, saved_ranking)
         for scenario_type in display_order
     ]
 
@@ -526,6 +697,7 @@ def ranking_page(request: Request, position: int, confirmed: int = 0) -> HTMLRes
             "target_attribute": record["target_attribute"],
             "scenarios": scenarios,
             "confirmed": bool(confirmed),
+            "has_saved_ranking": saved_ranking is not None,
             "is_first": position == 1,
             "is_last": position == len(pair_order),
         },
@@ -547,19 +719,26 @@ async def submit_ranking(request: Request, position: int) -> Response:
     form_data = await request.form()
     order_text = str(form_data.get("order", "")).strip()
     ranking_order = [item.strip() for item in order_text.split(",") if item.strip()]
+    comments = {
+        scenario_type: str(form_data.get(f"comment_{scenario_type}", "")).strip()
+        for scenario_type in SCENARIO_TYPES
+    }
 
     pair_id = pair_order[position - 1]
     record = records_by_pair_id[pair_id]
 
     try:
-        save_ranking(username, record, ranking_order)
+        save_ranking(username, record, ranking_order, comments)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
     if position == len(pair_order):
         return RedirectResponse(url="/thanks", status_code=303)
 
-    return RedirectResponse(url=f"/rank/{position}?confirmed=1", status_code=303)
+    return RedirectResponse(
+        url=f"/rank/{position}?confirmed=1#ranking-navigation",
+        status_code=303,
+    )
 
 
 @app.get("/thanks", response_class=HTMLResponse)
@@ -580,4 +759,53 @@ def thanks_page(request: Request) -> HTMLResponse:
             "total_count": len(pair_order),
         },
         request=request,
+    )
+
+
+@app.get("/export")
+def export_results(request: Request) -> StreamingResponse:
+    """Export the current user's ranking results as an Excel file."""
+    username = require_username(request)
+    export_rows = build_export_rows(username)
+
+    export_columns = [
+        "pair_id",
+        "gold_scenario",
+        "topic",
+        "target_attribute",
+        "web_search_scenario",
+        "baseline_scenario",
+        "web_search_example_question",
+        "baseline_example_question",
+        "cognitive_level",
+        "gold_score",
+        "web_search_score",
+        "baseline_score",
+        "gold_comment",
+        "web_search_comment",
+        "baseline_comment",
+        "username",
+        "updated_at",
+    ]
+    export_data = pd.DataFrame(export_rows, columns=export_columns)
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        export_data.to_excel(writer, index=False, sheet_name="rankings")
+    output.seek(0)
+
+    safe_username = "".join(
+        character if character.isalnum() or character in {"-", "_"} else "_"
+        for character in username
+    )
+    file_name = f"scenario_rankings_{safe_username}.xlsx"
+
+    return StreamingResponse(
+        output,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={
+            "Content-Disposition": f'attachment; filename="{file_name}"',
+        },
     )

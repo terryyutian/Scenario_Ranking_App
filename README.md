@@ -4,15 +4,44 @@ This is a small FastAPI app for ranking generated scenarios. It reads
 `scenario_comparison_example_questions.xlsx` from the project root and stores
 ranking results locally in `scenario_rankings.sqlite3`.
 
+
 ## Setup
 
-Install the dependencies:
+Create a virtual environment in the project folder:
 
 ```bash
+python -m venv .venv
+```
+
+Activate the virtual environment.
+
+On Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+On Windows Command Prompt:
+
+```cmd
+.\.venv\Scripts\activate.bat
+```
+
+On macOS or Linux:
+
+```bash
+source .venv/bin/activate
+```
+
+After activation, your terminal should show `(.venv)` near the prompt. Then
+upgrade `pip` and install the dependencies inside the virtual environment:
+
+```bash
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Make sure the Excel file is in this same directory:
+Make sure the Excel file is in the same directory:
 
 ```text
 scenario_comparison_example_questions.xlsx
@@ -30,26 +59,48 @@ Then open:
 http://127.0.0.1:8000
 ```
 
-## Output Stored in SQLite
 
-Each saved ranking includes:
+## Next Time You Open the Repo
 
-- `username`
-- `pair_id`
-- `gold_scenario`
-- `topic`
-- `target_attribute`
-- `web_search_scenario`
-- `baseline_scenario`
-- `web_search_example_question`
-- `baseline_example_question`
-- `gold_score`
-- `web_search_score`
-- `baseline_score`
-- `updated_at`
+You do not need to create the virtual environment again. The `.venv` folder
+will stay in the project folder unless you delete it.
 
-Scores are assigned based on the final order on the page:
+When you open the repo again in VS Code, open a new terminal and activate the
+existing virtual environment.
 
-- Top scenario: `2`
-- Middle scenario: `1`
-- Bottom scenario: `0`
+On Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+On Windows Command Prompt:
+
+```cmd
+.\.venv\Scripts\activate.bat
+```
+
+On macOS or Linux:
+
+```bash
+source .venv/bin/activate
+```
+
+After the virtual environment is activated, run the app:
+
+```bash
+uvicorn main:app --reload
+```
+
+## Export
+
+After completing the ranking task, the thank-you page includes an export button.
+The export downloads the current user's saved results as an `.xlsx` file with
+the original fields, ranking scores, comments, username, and timestamp.
+
+## Username Behavior
+
+The app stores the most recent username in SQLite. If someone enters a
+different username on the login page, the app asks whether to continue with the
+new username or use the previous one. Returning users are sent to the first
+scenario pair they have not completed.

@@ -147,6 +147,25 @@ button,
   color: var(--danger-ink);
 }
 
+.warning-message {
+  margin-top: 20px;
+  padding: 14px;
+  border-left: 4px solid var(--question-line);
+  border-radius: 4px;
+  background: var(--question-bg);
+}
+
+.small-note {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.large-button {
+  min-height: 40px;
+  padding: 9px 16px;
+}
+
 .task-header {
   display: flex;
   justify-content: space-between;
@@ -278,6 +297,28 @@ th {
 .example-question {
   border-left: 4px solid var(--question-line);
   background: var(--question-bg);
+}
+
+.comment-label {
+  display: block;
+  margin-top: 16px;
+  margin-bottom: 6px;
+}
+
+textarea {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--ink);
+  font: inherit;
+}
+
+.warning-message form {
+  margin: 0;
 }
 
 .actions {

@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# database
+database_cleaning.sql
+scenario_rankings.sqlite3

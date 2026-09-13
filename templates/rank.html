@@ -44,7 +44,7 @@
       <input type="hidden" name="order" id="ranking-order" value="{{ scenarios | map(attribute='type') | join(',') }}">
 
       <div class="ranking-instructions">
-        Drag the scenario boxes to rank them. The top scenario receives score 2, the middle scenario receives score 1, and the bottom scenario receives score 0.
+        To rank the scenarios, move the scenario boxes up and down or simply drag them. 
       </div>
 
       <div class="rank-list" id="rank-list">
@@ -108,19 +108,33 @@
               <p class="section-label">Example Question</p>
               <div class="example-question">{{ scenario.example_question }}</div>
             {% endif %}
+
+            <label class="comment-label" for="comment-{{ scenario.type }}">Comment</label>
+            <textarea
+              id="comment-{{ scenario.type }}"
+              name="comment_{{ scenario.type }}"
+              rows="3"
+              placeholder="I like this scenario because... or I don't like this scenario because ..."
+            >{{ scenario.comment }}</textarea>
           </article>
         {% endfor %}
       </div>
 
-      <div class="actions">
+      <div class="actions" id="ranking-navigation">
         {% if not is_first %}
           <a class="secondary-link" href="/rank/{{ position - 1 }}">Back</a>
         {% endif %}
 
-        <button type="submit">Confirm</button>
+        <button
+          type="submit"
+          id="confirm-button"
+          {% if confirmed or has_saved_ranking %}class="hidden"{% endif %}
+        >
+          Confirm
+        </button>
 
-        {% if confirmed and not is_last %}
-          <a class="primary-link" href="/rank/{{ position + 1 }}">Next</a>
+        {% if (confirmed or has_saved_ranking) and not is_last %}
+          <a class="primary-link" id="next-button" href="/rank/{{ position + 1 }}">Next</a>
         {% endif %}
       </div>
     </form>
