@@ -4,6 +4,21 @@ This is a small FastAPI app for ranking generated scenarios. It reads
 `scenario_comparison_example_questions.xlsx` from the project root and stores
 ranking results locally in `scenario_rankings.sqlite3`.
 
+## Holistic Judgement Rubric
+
+### Overall Scenario Quality
+
+Experts should rank the three scenarios based on their overall usefulness for
+downstream college statistics question generation.
+
+A high-quality scenario should:
+
+- Clearly support the intended statistics topic and target attribute.
+- Present a realistic and instructionally appropriate context.
+- Provide enough relevant information to support a clear and solvable
+  problem-solving question.
+- Be written in a clear, self-contained way for the intended student audience.
+
 
 ## Setup
 
